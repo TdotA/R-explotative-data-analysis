@@ -1,0 +1,520 @@
+---
+title: "Analysing enviormental factors and their influence on academic success on the example of Portuguese students"
+author: "Todor Antic"
+date: "6/8/2021"
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+    code_folding: hide
+bibliography: bibliography.bib
+nocite: | 
+  @EnviormentalInfluence , @evans2010probability, @KNN, @RF, @LDA, @caret, @wickham2016r, @Golf, @Data
+
+
+
+---
+
+```{r setup, include=FALSE,warrning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+There are many factors that can influence a students academic success, but they can roughly be split into two groups: **environmental** and **developmental**. The former can be described as anything in the life of the student that impacts their life and ability to study. Their are many such factors and in this report we will consider some of them and try to see how much they influence the success of the students in their "core" subject : Math. Note that definition of subjects as "core" is taken from the original authors of the dataset who will be cited bellow formally.
+
+
+# Description of the Problem
+
+If the educators can look at a students environmental factors and then use those factors to accurately predict which students may struggle academically then they could prevent the academic struggle by helping those students and thus improving their chances of succeeding in academic fields. This is especially important for Portugal which tails behind its European counterparts in the terms of the education level of its population. In part due to high failure rates.  
+
+Before starting we will load most of the needed libraries for the analysis of the data:
+
+```{r eruptions, echo=TRUE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(mlr)
+library(ggplot2)
+library(patchwork)
+library(RColorBrewer)
+library(GGally)
+library(DT)
+library(psych)
+library(summarytools)
+library(gt)
+```
+
+We will now load the dataset:
+```{r tabsets, echo=TRUE, results="asis", message=FALSE}
+math<-read_csv("student-mat.csv")
+```
+
+# Presentation of the Data
+
+Now we can take a look at the dataset:
+
+*Table 1: *
+```{r table, echo=TRUE, message = FALSE}
+  datatable(math, rownames = FALSE, filter = "top", options = list(pageLength=5, scrollX=TRUE, autoWidth=TRUE))
+
+```
+We can already see some things about our data, and we can see some possible issues. The dataset is not big and the sampling of the students was done in only two schools witch might skew the data. However the dataset should be big enough to draw some conclusions which, if promising could be used to incite an attempt of reproduction on a bigger dataset. 
+
+Now, in order to properly understand the data we need to understand what each of the columns represent:  
+
+*school - student's school (binary: 'GP' - Gabriel Pereira or 'MS' - Mousinho da Silveira)
+
+* sex - student's sex (binary: 'F' - female or 'M' - male)
+
+* age - student's age (numeric: from 15 to 22)
+
+* address - student's home address type (binary: 'U' - urban or 'R' - rural)
+
+* famsize - family size (binary: 'LE3' - less or equal to 3 or 'GT3' - greater than 3)
+
+* Pstatus - parent's cohabitation status (binary: 'T' - living together or 'A' - apart)
+
+* Medu - mother's education (numeric: 0 - none, 1 - primary education ($4^{th}$ grade), 2 - $5^{th}$ to $9^{th}$ grade, 3 - secondary education or 4 - higher education)
+
+* Fedu - father's education (numeric: 0 - none, 1 - primary education ($4^{th}$ grade), 2 - $5^{th}$ to $9^{th}$ grade, 3 - secondary education or 4 - higher education)
+
+* Mjob - mother's job (nominal: 'teacher', 'health' care related, civil 'services' (e.g. administrative or police), 'athome' or 'other')
+* Fjob - father's job (nominal: 'teacher', 'health' care related, civil 'services' (e.g. administrative or police), 'athome' or 'other')
+
+* reason - reason to choose this school (nominal: close to 'home', school 'reputation', 'course' preference or 'other')
+
+* guardian - student's guardian (nominal: 'mother', 'father' or 'other')
+
+* traveltime - home to school travel time (numeric: 1 - 1 hour)
+
+* studytime - weekly study time (numeric: 1 - 10 hours)
+
+* failures - number of past class failures (numeric: n if 1
+* schoolsup - extra educational support (binary: yes or no)
+
+* famsup - family educational support (binary: yes or no)
+
+* paid - extra paid classes within the course subject (Math or Portuguese) (binary: yes or no)
+
+* activities - extra-curricular activities (binary: yes or no)
+
+* nursery - attended nursery school (binary: yes or no)
+
+* higher - wants to take higher education (binary: yes or no)
+
+* internet - Internet access at home (binary: yes or no)
+
+* romantic - with a romantic relationship (binary: yes or no)
+
+* famrel - quality of family relationships (numeric: from 1 - very bad to 5 - excellent)
+
+* freetime - free time after school (numeric: from 1 - very low to 5 - very high)
+
+* goout - going out with friends (numeric: from 1 - very low to 5 - very high)
+
+* Dalc - workday alcohol consumption (numeric: from 1 - very low to 5 - very high)
+
+* Walc - weekend alcohol consumption (numeric: from 1 - very low to 5 - very high)
+
+* health - current health status (numeric: from 1 - very bad to 5 - very good)
+
+* absences - number of school absences (numeric: from 0 to 93)
+
+* G1 - first period grade (numeric: from 0 to 20)
+
+* G2 - second period grade (numeric: from 0 to 20)
+
+* G3 - final grade (numeric: from 0 to 20, output target)
+
+Note: This list was taken from *Attribute information* part of the dataset source which is cited bellow 
+
+The columns G1,G2,G3 are related to the core subject of math
+
+Now we can use describe() function from psych package to get a nice summary of the available data: 
+
+*Table 2:*
+```{r, echo=TRUE, results='asis', warning=FALSE, message=FALSE}
+    t1 <- psych::describe(math)
+    #library(Gmisc)
+    library(kableExtra)
+    kable(t1) %>% kable_styling() %>% scroll_box(width = "100%", height = "500px")
+    
+```
+From here we can see some information about the data. There is 395 students, out of which 208 are female and 187 are male. The average age of the students is 16~17 years old. The other demographic descriptions are consistent with the economic and demographic picture in Portugal at the time, by that we consider marital status of the parents , economic status, parental employment and similar. This would tell us that the sample is at least somewhat representative of the student population in Portugal at the time. We note that due to scarcity of the data we may assume that internet availability was a bit higher than standard as the 2021 reports indicate that about 84% of people have internet in Portugal and students in the dataset represented they had it in 83% of the cases 15 years ago. 
+
+# Exploratory Data Analysis and Visualization
+
+Before getting into more thorough analysis of the available data we need to talk about the goal we want to achieve with the analysis. The goal is to explore correlation between the factors and success of the students and try to find a way of predicting the grades just by considering the environmental factors affecting the student. 
+
+For start we will change up the dataset by adding and removing some columns: 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+  newmath <- math %>% select(-c("nursery")) %>% mutate(Pass = case_when(.$G3>=10 ~ T, .$G3<10 ~ F))
+```
+
+From here we can start considering different factors.
+
+## Family Life and Support
+Family life has been shown to influence development of children and their academic performance as well so it's only logical to check if we can reproduce the results and use them in order to form a prediction. 
+
+We will now again modify the dataset to get rid of extra columns:
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+fammath <- newmath %>% select(grep("(fam)|(edu)|(job)|(guard)|(status)|(Pass)|(^G)", colnames(newmath))) 
+```
+Now we will look at the correlation matrix for our new data, we use the *ggcor()* function from the *GGally* package: 
+
+*Table 3:*
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+ggcorr(fammath, method = c("pairwise","pearson"),nbreaks = 8)
+```
+
+From here we can see some correlation between variables, of course we can't conclude anything about the non-numeric columns. Now we proceed to look at the significance of the correlations. In other words we want to find p-values. We do this by using *Hmisc* package and function *rcorr* and a user defined function for formatting.
+
+```{r, message=FALSE, warning=FALSE}
+library(Hmisc)
+res<-rcorr(as.matrix(fammath %>% select_if(is.numeric)))
+
+
+FormatCMatrix <- function(cor, p) {
+  ut <- upper.tri(cor)
+  data.frame(
+    row = rownames(cor)[row(cor)[ut]],
+    column = rownames(cor)[col(cor)[ut]],
+    corn  =(cor)[ut],
+    pv = p[ut]
+    )
+}
+fres<-FormatCMatrix(res$r,res$P)
+```
+
+*Table 4:*
+```{r, message=FALSE, warning=FALSE}
+datatable(fres, rownames = FALSE, options = list(pageLength=5, scrollX=TRUE, autoWidth=TRUE))
+```
+
+From here we can observe which p values are smaller than 0.05 and from there we know that correlation may not be there by chance so we can investigate further. We will also look into some non numerical variables that are assumed to have an impact.
+
+### Parental education 
+Parental education level is an assumed factor in the academic success of students since higher education in parents indicates a more supportive study environment for students, this assumption is also supported by our previous results. In our dataset there are two separate variables: Medu and Fedu. In order to explore it we will consider as separate the cases where parents are separated and when they are together. If parents are separated we will look at the education of the guardian. If parents do cohabitate we will make an assumption, which is possibly too optimstic, that the parent with higher education level is a bigger influence. 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+edumath <- fammath %>% rowwise() %>% mutate(edu = case_when(Pstatus=="A" & guardian=="mother" ~ Medu , Pstatus == "A" & guardian=="father" ~ Fedu  , TRUE ~ max(Fedu,Medu) ))
+```
+
+*Plot 1:*
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+ggplot(edumath) + geom_bar(aes(x=edu)) + facet_wrap(~Pass) + labs(title = "Pass/Fail with respect to education level of the parents")
+```
+
+From here we can see that mostly the influence of parental education is not too high until we get to the families where one or both parents are highly educated (edu = 4) or when both have very low education (edu = 1). In those cases the chances of passing/failing is higher respectively. The pass/fail ratio over all education levels is easily viewable in the table bellow:
+
+*Table 5:*
+```{r echo=TRUE,message=FALSE, warning=FALSE}
+
+  passed <- edumath %>% group_by(edu) %>% filter(Pass==TRUE) %>% summarise(NumOfPassed= n())
+  all <- edumath %>% group_by(edu) %>% summarise(Number = n())
+  all %>% inner_join(passed, by="edu") %>% 
+    mutate(ratio = NumOfPassed/Number) %>% gt() 
+```
+
+### Parental employment 
+Parental employment status is a good indicator of economic stability of a family and hence a good indicator of good learning environment, thus we'll test to see if there is any correlation between different jobs and students performance.
+
+*Plot 2:*
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+ggplot(edumath, aes(x="", y=G3, fill=G3>=10)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0) + facet_grid(~Fjob) + labs(title = "Pass/Fail with respect to fathers job")
+```
+
+*Plot 3:*
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+ggplot(edumath, aes(x="", y=G3, fill=G3>=10)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0) + facet_grid(~Mjob) + labs(title = "Pass/Fail with respect to mothers job")
+```
+
+We can conclude that different jobs don't impact chances of passing that much (except for children of health workers) but instead the unemployment of a parent can have detrimental consequences to childs performance. 
+
+## Correlation between Sex, Age and G3 variables
+
+Age and sex of the student are not environment factors but there can still be some value to exploring the correlations that can be found here. 
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+mathm <- math %>% filter(sex == "M") 
+mathf <- math %>% filter(sex == "F") 
+cor.test(mathm$G3, mathm$age , method=c("pearson"))
+cor.test(mathf$G3, mathf$age , method=c("pearson"))
+```
+
+As we can see the p-values with female students are too big so we can not draw any conclusions, this is probably due to the nature of the dataset which is small and thus admits some skewness with the data. 
+For male4s students we have negative correlation which indicates that older students tend to have lower grades. This agres with our assumptions as very rarely do we have students older than 19 in high school and it usually indicates a number of failures or some environmental/cultural reasons for not attending high school earlier.
+
+
+## Free time, social and extracuricular activities
+We assume that social life, amount of free time versus school/commuting time and similar may impact childs/adolescents will to study and hence their performance. This is backed up by psychological research and we are going to see if those results are applicable to our dataset.   
+
+First we will prepare the data: 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+mathft <- math %>% select(c("address", "traveltime", "studytime", "freetime", "romantic", "Dalc", "Walc", "goout", "activities", "G1", "G2", "G3"))
+
+```
+
+Now we will make a correlation matrix so we can conclude which variables are interesting to us, as before we will also extract p-values in order to now which correlations are significant and which are not. 
+
+*Table 6:*
+```{r, message=FALSE, warning=FALSE}
+ggcorr(mathft, method = c("pairwise","pearson"),nbreaks = 8)
+```
+
+From here we can see that correlation exists even if it is slim, we will now look at p-values and decide on the course of action:
+
+```{r,warning=FALSE, message=FALSE}
+
+
+res2<-rcorr(as.matrix(mathft %>% select_if(is.numeric)))
+
+
+FormatCMatrix <- function(cor, p) {
+  ut <- upper.tri(cor)
+  data.frame(
+    row = rownames(cor)[row(cor)[ut]],
+    column = rownames(cor)[col(cor)[ut]],
+    corn  =(cor)[ut],
+    pv = p[ut]
+    )
+}
+fres2<-FormatCMatrix(res2$r,res2$P)
+```
+
+*Table 7:*
+```{r, echo= FALSE,message=FALSE, warning=FALSE}
+datatable(fres2, rownames = FALSE, options = list(pageLength=5, scrollX=TRUE, autoWidth=TRUE))
+```
+
+From here we can see that there is some worth in looking at correlations between traveltime, studytime, goout variables and G3. Note that we have some issues with p-values as we have very high p-value for correlation of freetime and G3 which is very unintuitive and does not agree with other known results. However we will not look at freetime variable too much as it is very weakly correlated with G3.
+
+### Study time 
+From correlation table we can see that study time has positive impact on the grades and thus it makes sense to take a look at the relationship between the two variables: 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+
+  mathft %>% group_by(G3) %>% summarise(studytime = mean(studytime)) -> mathft1
+
+```
+*Plot 4:*
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+  ggplot(mathft1) + geom_line(aes(x=G3, y=studytime)) + scale_x_continuous() + scale_y_continuous() + labs(title = "Points in the 3rd semester with respect to studytime")
+```
+
+From here we can see that highest performing students spent most time studying which was to be expected. The weird thing happens when we look ar students which are failing as they see to study just as much as some of there more succesful peers. This can be attributed to natural affinity but it is more probable that the difference between student scoring 5 and 10-15 points is the efficiency and method of studying.
+
+### Travel time 
+As is to be expected, previous tables indicate correlation between commute time and grades obtained. Naturally 
+this correlation is negative which makes sense as commuting takes away time and energy which in turn leads to lower grades, the following graph better illustrates this: 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+  mathft %>% group_by(G3) %>% summarise(traveltime = mean(traveltime)) -> mathft2
+```
+
+*Plot 5:*
+```{r, message=FALSE, warning=FALSE}
+  ggplot(mathft2) + geom_line(aes(x=G3, y=traveltime)) + scale_x_continuous() + scale_y_continuous()+labs(title = "Points in the 3rd semester with respect to traveltime")
+```
+
+We can see that highest scoring students had minimal commute time on average and as expected the lower scoring students had almost double the commute time. This information is concerning as commuting from school to home and back is something students can't influence and suggests that there might be a need for more schools or better infrastructure in order to improve this. 
+
+### Social life, romantic relationships 
+Here we will explore how much going out, drinking and having a romantic partner influences a students academic performance. From the correlation table we can see that going out has negative correlation with the G3 variable as well as alcohol consumption variables. However alcohol consumption has little influence and p-values are pretty high so we will ignore those variables and focus on *goout* variable when considering general social activities. As *romantic* is a non-numeric variable we can't say anything about numerical correlation with G3 so we will explore that now. 
+
+Firstly we take a look at *goout* variable: 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+    mathft %>% group_by(G3) %>% summarise(goout = mean(goout)) -> mathft3
+```
+*Plot 6:*
+```{r, message=FALSE, warning=FALSE}
+  ggplot(mathft3) + geom_point(aes(x=G3, y=goout)) + scale_x_continuous() + scale_y_continuous() + labs(title = "Points in the 3rd semester with respect to goout") 
+```
+
+Again we can see that what correlation matrix indicated is consistent with the plotted data, the higher scoring students tend to not go out as much while the lower scoring ones tend to go out more. The one outlier is the students with lowest scores as they tend to not go out as much as some higher scoring students. This isn't that odd necessarily as really low scores may come with "grounding" which prevents the students from going out. Another expecteation may be the following, if we recall the lowest scoring students were older ona average and thus them being held back or enrolling later may lead to them being ostracized by the rest of their peers. This however is only a hypotesis and will not be explored more here.
+
+Now we can look at the possible influence of obligations that a romantic relationship brings into a young persons life: 
+*Plot 7: *
+```{r, message=FALSE, warning=FALSE}
+ggplot(mathft) + geom_bar(aes(x=G3, color = romantic, fill=romantic)) + labs(title = "Points in the 3rd semester with respect to romantic")
+```
+
+From here we can see that mostly there is no observable influence except with highest scoring students who tend to not be romantically involved and students with 4/20 points are all romantically involved. With other students the number of romantically involved students is in proportion with the total number of students who obtained the certain grade or is higher/lower by a non-significant margin.
+
+### Extraculicular activities
+In practice the students who choose to participate in extracurriculars are usually the ones who do well or even exceptionally well at normal classes. We will check if that is also true for our situation. 
+
+*Plot 8*
+```{r, message=FALSE, warning=FALSE}
+ggplot(mathft) + geom_boxplot(aes(x=activities, y=G3))+labs(title = "Points in the 3rd semester with respect to activitiex")
+```
+
+Even though we can see that the mean values are the same we can also notice that with students who do attend the extracurricular activities there is a positive skewness which was to be espected.
+
+## Economic factors
+We have already considered one economic factor which is parental employment, but in this section we will look at some other factors which are related to families economic stability. We would assume that students who have internet and are able to afford extra classes should have higher scores on the test. We will again change our data and then go further with the analysis. 
+
+```{r, message=FALSE, warning=FALSE}
+mathecon <- newmath %>% select(c("paid", "internet", "health" , "G3" ))
+
+```
+
+### Internet availability
+In the modern time almost everyone has access to the internet and our dataset reflects that thus we will just look at the part of the student body which doesn't have internet access and check if their grades are distributed in a different way than the enierety of srudent body, for reference this is how the the grades of the whole student body are distributed: 
+*Plot 9:*
+```{r, message=FALSE, warning=FALSE}
+ggplot(mathecon) + geom_bar(aes(x=G3, fill=G3>=10)) + labs(title = "General aloccation of points in the 3rd semester")
+```
+
+Now that we have a frame of reference we can consider our special group: 
+
+*Plot 10:*
+```{r, message=FALSE, warning=FALSE}
+ggplot(mathecon%>% filter(internet=="no")) + geom_bar(aes(x=G3, fill=G3>=10)) + labs(title = "Allocation points in the 3rd semester to students without internet access")
+```
+
+We can see that results stay mostly the same with some exceptions that can be attributed to the size of the sample (66/395) but we will still state them: 
+* There is no highest scoring students without internet access
+* A higher percentage of students got 0 points (8/66 vs. 38/395)
+
+In general our results are not as expected but this is probably due to the samplesize but it might also indicate that internet access is not as important for studying as most students still have notes from class and are also obliged to acquire to obtain textbooks in order to participate in class.
+
+### Extra classes
+Extra classes may prove to be a bit of an odd factor as they might be used to either up a good grade to the best one or to bring a failing student to a passing grade. Without knowing more about the "tutoring culture" in Portugal we are unable to make any assumptions about the correlations of this variable and the success of the student. 
+We will change variable *paid* into a numerical variable and look at the correlation matrix of our dataset: 
+
+*Table 9:*
+```{r, message=FALSE, warning=FALSE}
+mathecon %>% mutate(paid = case_when(paid=="no"~0, TRUE~1)) ->mathecon1
+ggcorr(mathecon1, method = c("pairwise","pearson"),nbreaks = 8)
+```
+
+We can see that there is some positive correlation which indicates that on our dataset having extra paid classes means increased final grade. 
+
+## Predicting the result of the test 
+In this part we will construct our own model for predicting the data using the caret library and then check it's accuracy to see how it does. We will be testing it with following algorithms: 
+* K-Nearest Neighbors
+* Linear Discriminant Analysis
+* Random Forest
+
+
+First we load the caret library: 
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+library(caret)
+```
+
+Now we need to discuss the formula for our prediction model. In order ot predict if the student is going to pass or fail we are going to use the following parameters: 
+*Parental education
+*Parental employment (we will change it to a binary variable)
+*Study time 
+*Extraculicural activities (we will change it to a binary variable)
+
+For the training and testing we will 10-fold cross validation, i.e we will split the data into 10 parts, train on 9 of them and then test on the last one. Thankfully caret lets us do this rather easily. Then we will repeat this 10 times on different partitions. For more info on cross-validation check the references.
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+newmath1 <- newmath %>% mutate(Femp = case_when(Fjob == "at_home"~0, TRUE ~ 1)) %>% mutate(activities = case_when(activities=="no"~0, TRUE ~1)) %>% mutate(Memp = case_when(Mjob == "at_home"~ 0, TRUE ~ 1)) %>% mutate(Pass = as.factor(case_when(Pass==TRUE ~ 1, Pass==FALSE ~ 0 ))) %>% select(c("Memp", "Femp", "activities", "Pass", "Medu", "Fedu", "studytime"))
+
+Folds<- trainControl(method = "repeatedcv", number = 10, repeats = 10)    
+
+```
+
+Now we can start making our model
+
+### KNN algorithm 
+
+The k-nearest neighbor algorithm stores all the available data and classifies a new data point based on the similarity measure (e.g., distance functions). This means when new data appears. Then it can be easily classified into a well-suited category by using K- NN algorithm. 
+
+Suppose there are two classes, i.e., Class A and Class B, and we have a new unknown data point “?”, so this data point will lie in which of these classes. To solve this problem, we need a K-NN algorithm. With the help of K-NN, we can easily identify the class of a particular dataset. The data point is classified by a majority vote of its neighbors, with the data point being assigned to the class most common amongst its K nearest neighbors measured by a distance function.  
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+
+knn <- train(Pass ~. ,
+               data = newmath1,
+               method = "knn",  
+               metric= "Accuracy",
+               trControl = Folds)  
+
+knn
+```
+
+
+### Linear Discriminant Analysis
+
+The linear Discriminant analysis estimates the probability that a new set of inputs belongs to every class. The output class is the one that has the highest probability. That is how the LDA makes its prediction.
+
+LDA uses Bayes’ Theorem to estimate the probabilities. If the output class is (k) and the input is (x), here is how Bayes’ theorem works to estimate the probability that the data belongs to each class.
+
+$$P(Y=x|X=x) = (P_{Ik} * f_k(x)) / \sum(P_{Il} * f_l(x))$$
+
+In the above equation:
+
+$P_{lk}$– Prior probability. This is the base probability of each class as observed in the training data
+
+$f(x)$ – the estimated probability that x belongs to that particular class. f(x) uses a Gaussian distribution function.
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+library(e1071)
+Lda <- train(Pass ~. ,
+               data = newmath1,
+               method = "lda",  
+               metric= "Accuracy",
+               trControl = Folds)  
+
+Lda
+```
+
+
+### Random Forest algorithm
+
+Random forest is a supervised learning algorithm. The "forest" it builds, is an ensemble of decision trees, usually trained with the “bagging” method. The general idea of the bagging method is that a combination of learning models increases the overall result.
+
+Put simply: random forest builds multiple decision trees and merges them together to get a more accurate and stable prediction.
+
+One big advantage of random forest is that it can be used for both classification and regression problems, which form the majority of current machine learning systems.
+
+```{r, echo=TRUE, warning=FALSE, message=FALSE}
+library(randomForest)
+rf <- train(Pass ~. ,
+               data = newmath1,
+               method = "rf",  
+               metric= "Accuracy",
+               trControl = Folds)  
+
+rf
+```
+
+
+# Conclusion 
+From the tests we can conclude that Linear Discriminant Analysis was the one that had the best accuracy and our model gave us decently accurate results by being right about 67% of the time. Thus we can conclude that environmental factors can be used to predict the academic success of the student. Of course there is possibility that the model is suboptimal but improving it would require more thorough research and investigation of the data.
+
+# References
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
